@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<meta name="color-scheme" content="light" />
+<title>FOH Pulse</title>
+<style>
+  :root {
+    --green: #2e7d32;
+    --green-bg: #e8f5e9;
+    --yellow: #b8860b;
+    --yellow-bg: #fff8e1;
+    --orange: #d2691e;
+    --orange-bg: #fff3e0;
+    --red: #c62828;
+    --red-bg: #fde8e8;
+    --ink: #1a1a1a;
+    --muted: #6b6b6b;
+    --line: #e2e2e2;
+    --bg: #fafafa;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    min-height: 100vh;
+    padding: 16px 16px 40px;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 20px;
+    margin: 4px 0 2px;
+    letter-spacing: -0.2px;
+  }
+  .subtitle {
+    color: var(--muted);
+    font-size: 13px;
+    margin: 0 0 18px;
+  }
+
+  /* --- Login --- */
+  #loginScreen {
+    display: none;
+    padding-top: 20vh;
+    text-align: center;
+  }
+  #loginScreen h2 { font-size: 18px; margin-bottom: 18px; }
+  #loginScreen input {
+    width: 100%;
+    font-size: 18px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+  #loginScreen button, .refresh-btn {
+    width: 100%;
+    font-size: 17px;
+    font-weight: 600;
+    padding: 14px;
+    border: none;
+    border-radius: 10px;
+    background: #1a1a1a;
+    color: white;
+    cursor: pointer;
+  }
+  #loginError { color: var(--red); font-size: 14px; margin-top: 10px; min-height: 18px; }
+
+  /* --- Main view --- */
+  #mainScreen { display: none; }
+
+  .status-card {
+    border-radius: 16px;
+    padding: 22px 20px;
+    margin-bottom: 14px;
+    text-align: center;
+  }
+  .status-card.green { background: var(--green-bg); color: var(--green); }
+  .status-card.yellow { background: var(--yellow-bg); color: var(--yellow); }
+  .status-card.orange { background: var(--orange-bg); color: var(--orange); }
+  .status-card.red { background: var(--red-bg); color: var(--red); }
+  .status-card.unknown { background: #eee; color: var(--muted); }
+
+  .status-emoji { font-size: 40px; line-height: 1; }
+  .status-pct { font-size: 48px; font-weight: 700; margin: 4px 0; line-height: 1; }
+  .status-label { font-size: 16px; font-weight: 600; }
+  .status-sub { font-size: 13px; opacity: 0.85; margin-top: 4px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .tile {
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px;
+  }
+  .tile .label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .tile .value { font-size: 22px; font-weight: 700; }
+
+  .projection-card {
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 14px;
+  }
+  .projection-card .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .projection-card .value { font-size: 26px; font-weight: 700; }
+  .projection-card .note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  .actions-card {
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 14px;
+  }
+  .actions-card h3 { font-size: 14px; margin: 0 0 10px; }
+  .actions-card ul { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.6; }
+
+  .warn-card {
+    background: #fff8e1;
+    border: 1px solid #f0d58c;
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    color: #7a5c00;
+  }
+
+  .not-configured {
+    background: white;
+    border: 1px dashed var(--line);
+    border-radius: 12px;
+    padding: 18px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 14px;
+    margin-bottom: 14px;
+  }
+
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 10px;
+  }
+  .footer button {
+    background: none;
+    border: none;
+    color: var(--muted);
+    text-decoration: underline;
+    font-size: 12px;
+    padding: 4px;
+  }
+
+  .refresh-row { margin-top: 16px; }
+
+  .caveat {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 18px;
+    line-height: 1.5;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+  }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+  <div id="loginScreen">
+    <h2>FOH Pulse</h2>
+    <form id="loginForm">
+      <input type="password" id="passwordInput" placeholder="Dashboard password" autocomplete="current-password" />
+      <button type="submit">Log in</button>
+    </form>
+    <div id="loginError"></div>
+  </div>
+
+  <div id="mainScreen">
+    <h1>FOH Pulse</h1>
+    <p class="subtitle">Wages vs sales, right now</p>
+
+    <div id="content"></div>
+
+    <div class="footer">
+      <span id="asOfLine"></span>
+      <button id="logoutBtn">Log out</button>
+    </div>
+
+    <div class="refresh-row">
+      <button class="refresh-btn" id="refreshBtn">Refresh now</button>
+    </div>
+
+    <p class="caveat">
+      Hours worked come from the published roster, not actual clock-in/out
+      — this assumes everyone is working their rostered shift as planned.
+      Sales figures are from Square and include GST, so they won't match
+      the Revenue figure on the main Dashboard exactly. Projected end-of-day
+      numbers are a rough straight-line estimate, not a forecast model.
+    </p>
+  </div>
+
+<script>
+const content = document.getElementById('content');
+const loginScreen = document.getElementById('loginScreen');
+const mainScreen = document.getElementById('mainScreen');
+let refreshTimer = null;
+
+function money(n) {
+  if (n === null || n === undefined) return '—';
+  return '$' + n.toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+function pct(n) {
+  if (n === null || n === undefined) return '—';
+  return (n * 100).toFixed(1) + '%';
+}
+function hours(n) {
+  if (n === null || n === undefined) return '—';
+  return n.toFixed(1) + 'h';
+}
+
+const STATUS_META = {
+  green:  { emoji: '🟢' },
+  yellow: { emoji: '🟡' },
+  orange: { emoji: '🟠' },
+  red:    { emoji: '🔴' },
+};
+
+const ACTION_ITEMS = [
+  "Can someone take an earlier break?",
+  "Can someone finish early?",
+  "Do we have too many people on FOH right now?",
+  "Is someone staying beyond their planned finish?",
+  "Is trade actually supporting the current staffing level?",
+];
+
+async function checkSession() {
+  const res = await fetch('/api/session');
+  const data = await res.json();
+  if (data.loggedIn) {
+    showMain();
+  } else {
+    loginScreen.style.display = 'block';
+    mainScreen.style.display = 'none';
+  }
+}
+
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const password = document.getElementById('passwordInput').value;
+  const errEl = document.getElementById('loginError');
+  errEl.textContent = '';
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errEl.textContent = data.error || 'Login failed';
+      return;
+    }
+    showMain();
+  } catch (err) {
+    errEl.textContent = 'Could not reach the server — check your connection.';
+  }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  if (refreshTimer) clearInterval(refreshTimer);
+  loginScreen.style.display = 'block';
+  mainScreen.style.display = 'none';
+});
+
+document.getElementById('refreshBtn').addEventListener('click', loadToday);
+
+function showMain() {
+  loginScreen.style.display = 'none';
+  mainScreen.style.display = 'block';
+  loadToday();
+  if (refreshTimer) clearInterval(refreshTimer);
+  // Live snapshot model, not a persisted log — just re-pull on a timer so
+  // whoever's holding the phone doesn't have to remember to tap refresh.
+  refreshTimer = setInterval(loadToday, 3 * 60 * 1000);
+}
+
+function renderNotConfigured(missingBits) {
+  content.innerHTML = `<div class="not-configured">Not ready yet — needs ${missingBits.join(' and ')}.<br>Set these up in the main Dashboard first.</div>`;
+}
+
+async function loadToday() {
+  let data;
+  try {
+    const res = await fetch('/api/today');
+    if (res.status === 401) { checkSession(); return; }
+    data = await res.json();
+  } catch (err) {
+    content.innerHTML = `<div class="not-configured">Could not reach the server. Check your connection and try again.</div>`;
+    return;
+  }
+
+  const missing = [];
+  if (!data.configured.square) missing.push('Square connected');
+  if (!data.configured.employmentHero) missing.push('Employment Hero connected');
+  if (!data.configured.staffPay) missing.push('Staff pay setup (in the Dashboard\'s Settings)');
+  if (missing.length) { renderNotConfigured(missing); updateAsOf(data.asOf); return; }
+
+  if (data.noOneRosteredToday) {
+    content.innerHTML = `<div class="not-configured">No one's rostered today, so there's nothing to track yet.</div>`;
+    updateAsOf(data.asOf);
+    return;
+  }
+
+  const statusKey = data.status || 'unknown';
+  const meta = STATUS_META[statusKey] || { emoji: '⚪' };
+  const label = data.statusLabel || 'Not enough data yet';
+
+  let html = '';
+
+  html += `<div class="status-card ${statusKey}">
+    <div class="status-emoji">${meta.emoji}</div>
+    <div class="status-pct">${pct(data.wagePctSoFar)}</div>
+    <div class="status-label">${label}</div>
+    <div class="status-sub">Wage % so far today</div>
+  </div>`;
+
+  html += `<div class="grid">
+    <div class="tile"><div class="label">Sales so far</div><div class="value">${money(data.salesSoFar)}</div></div>
+    <div class="tile"><div class="label">Wage cost so far</div><div class="value">${money(data.wageCostSoFar)}</div></div>
+    <div class="tile"><div class="label">Hours worked so far</div><div class="value">${hours(data.hoursWorkedSoFar)}</div></div>
+    <div class="tile"><div class="label">Hours remaining</div><div class="value">${hours(data.hoursRemaining)}</div></div>
+  </div>`;
+
+  if (data.projectedWagePctEndOfDay !== null) {
+    html += `<div class="projection-card">
+      <div class="label">Projected if trade keeps pace</div>
+      <div class="value">${pct(data.projectedWagePctEndOfDay)} wage % at close</div>
+      <div class="note">Based on ${money(data.projectedSalesEndOfDay)} projected sales for the full day — a rough straight-line estimate from today's trade so far, not a forecast model.</div>
+    </div>`;
+  } else {
+    html += `<div class="projection-card">
+      <div class="label">Projected end-of-day wage %</div>
+      <div class="value" style="font-size:16px;color:#6b6b6b;">Too early to project — check back once trade's underway.</div>
+    </div>`;
+  }
+
+  if (statusKey !== 'green') {
+    html += `<div class="actions-card">
+      <h3>What can you do?</h3>
+      <ul>${ACTION_ITEMS.map(a => `<li>${a}</li>`).join('')}</ul>
+    </div>`;
+  }
+
+  if (data.unmatchedStaffNames && data.unmatchedStaffNames.length) {
+    html += `<div class="warn-card">These rostered staff don't have a pay profile set up in the Dashboard's Settings yet, so their hours aren't counted above: ${data.unmatchedStaffNames.join(', ')}.</div>`;
+  }
+  if (data.errors.square) {
+    html += `<div class="warn-card">Square error: ${data.errors.square}</div>`;
+  }
+  if (data.errors.employmentHero) {
+    html += `<div class="warn-card">Employment Hero error: ${data.errors.employmentHero}</div>`;
+  }
+
+  content.innerHTML = html;
+  updateAsOf(data.asOf);
+}
+
+function updateAsOf(iso) {
+  if (!iso) return;
+  const d = new Date(iso);
+  document.getElementById('asOfLine').textContent = 'Updated ' + d.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+}
+
+checkSession();
+</script>
+</body>
+</html>

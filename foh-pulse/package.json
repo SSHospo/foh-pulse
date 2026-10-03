@@ -1,0 +1,14 @@
+{
+  "name": "foh-pulse",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "selftest": "node selftest.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.110.0"
+  }
+}

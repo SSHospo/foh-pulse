@@ -1,0 +1,17 @@
+name = "foh-pulse"
+main = "worker.js"
+compatibility_date = "2026-07-01"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# SAME namespace as the Dashboard repo (github.com/SSHospo/Dashboard) —
+# deliberately not a new KV namespace. This app reads the Dashboard's
+# already-stored auth password, Employment Hero tokens, and Settings
+# (Staff pay setup, public holidays, timezone) rather than duplicating any
+# of it. See worker.js's header comment for the full picture.
+[[kv_namespaces]]
+binding = "TOKENS"
+id = "facc394b09a240b38e4213fb5e7a1d0b"
