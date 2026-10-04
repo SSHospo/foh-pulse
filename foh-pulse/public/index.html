@@ -196,7 +196,7 @@
 
   <div id="mainScreen">
     <h1>FOH Pulse</h1>
-    <p class="subtitle">Wages vs sales, right now</p>
+    <p class="subtitle">Front of house wages vs FOH sales, right now</p>
 
     <div id="content"></div>
 
@@ -210,11 +210,14 @@
     </div>
 
     <p class="caveat">
-      Hours worked come from the published roster, not actual clock-in/out
-      — this assumes everyone is working their rostered shift as planned.
-      Sales figures are from Square and include GST, so they won't match
-      the Revenue figure on the main Dashboard exactly. Projected end-of-day
-      numbers are a rough straight-line estimate, not a forecast model.
+      Front of house only: sales are Square items in your FOH categories
+      (after discounts, GST taken out) and wages are rostered shifts at your
+      FOH locations. Hours come from the published roster, not actual
+      clock-in/out, so this assumes everyone works their rostered shift as
+      planned. Refunds aren't deducted. These are live Square figures, not
+      the Revenue on the main Dashboard (that comes from Xero), so they won't
+      match exactly. Projected end-of-day numbers are a rough straight-line
+      estimate, not a forecast model.
     </p>
   </div>
 
@@ -231,6 +234,9 @@ function money(n) {
 function pct(n) {
   if (n === null || n === undefined) return '—';
   return (n * 100).toFixed(1) + '%';
+}
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 function hours(n) {
   if (n === null || n === undefined) return '—';
@@ -325,8 +331,19 @@ async function loadToday() {
   if (!data.configured.staffPay) missing.push('Staff pay setup (in the Dashboard\'s Settings)');
   if (missing.length) { renderNotConfigured(missing); updateAsOf(data.asOf); return; }
 
+  // FOH split not set up in the main Dashboard yet: say so plainly rather
+  // than showing $0 sales or a made-up wage %.
+  const fohMissing = [];
+  if (data.fohSetup && data.fohSetup.salesCategories === false) fohMissing.push('a Square category marked <b>Front of house</b>');
+  if (data.fohSetup && data.fohSetup.rosterLocations === false) fohMissing.push('an Employment Hero roster location marked <b>Front of house</b>');
+  if (fohMissing.length) {
+    content.innerHTML = `<div class="not-configured">FOH Pulse needs ${fohMissing.join(' and ')}.<br>Set it in the main Dashboard: Settings, Front of house / Back of house mapping.</div>`;
+    updateAsOf(data.asOf);
+    return;
+  }
+
   if (data.noOneRosteredToday) {
-    content.innerHTML = `<div class="not-configured">No one's rostered today, so there's nothing to track yet.</div>`;
+    content.innerHTML = `<div class="not-configured">No front of house staff are rostered today, so there's nothing to track yet.</div>`;
     updateAsOf(data.asOf);
     return;
   }
@@ -341,25 +358,25 @@ async function loadToday() {
     <div class="status-emoji">${meta.emoji}</div>
     <div class="status-pct">${pct(data.wagePctSoFar)}</div>
     <div class="status-label">${label}</div>
-    <div class="status-sub">Wage % so far today</div>
+    <div class="status-sub">FOH wage % so far today</div>
   </div>`;
 
   html += `<div class="grid">
-    <div class="tile"><div class="label">Sales so far</div><div class="value">${money(data.salesSoFar)}</div></div>
-    <div class="tile"><div class="label">Wage cost so far</div><div class="value">${money(data.wageCostSoFar)}</div></div>
-    <div class="tile"><div class="label">Hours worked so far</div><div class="value">${hours(data.hoursWorkedSoFar)}</div></div>
-    <div class="tile"><div class="label">Hours remaining</div><div class="value">${hours(data.hoursRemaining)}</div></div>
+    <div class="tile"><div class="label">FOH net sales (ex-GST)</div><div class="value">${money(data.salesSoFar)}</div></div>
+    <div class="tile"><div class="label">FOH wage cost so far</div><div class="value">${money(data.wageCostSoFar)}</div></div>
+    <div class="tile"><div class="label">FOH hours so far</div><div class="value">${hours(data.hoursWorkedSoFar)}</div></div>
+    <div class="tile"><div class="label">FOH hours remaining</div><div class="value">${hours(data.hoursRemaining)}</div></div>
   </div>`;
 
   if (data.projectedWagePctEndOfDay !== null) {
     html += `<div class="projection-card">
       <div class="label">Projected if trade keeps pace</div>
-      <div class="value">${pct(data.projectedWagePctEndOfDay)} wage % at close</div>
-      <div class="note">Based on ${money(data.projectedSalesEndOfDay)} projected sales for the full day — a rough straight-line estimate from today's trade so far, not a forecast model.</div>
+      <div class="value">${pct(data.projectedWagePctEndOfDay)} FOH wage % at close</div>
+      <div class="note">Based on ${money(data.projectedSalesEndOfDay)} projected FOH net sales for the full day — a rough straight-line estimate from today's trade so far, not a forecast model.</div>
     </div>`;
   } else {
     html += `<div class="projection-card">
-      <div class="label">Projected end-of-day wage %</div>
+      <div class="label">Projected FOH wage % at close</div>
       <div class="value" style="font-size:16px;color:#6b6b6b;">Too early to project — check back once trade's underway.</div>
     </div>`;
   }
@@ -372,13 +389,31 @@ async function loadToday() {
   }
 
   if (data.unmatchedStaffNames && data.unmatchedStaffNames.length) {
-    html += `<div class="warn-card">These rostered staff don't have a pay profile set up in the Dashboard's Settings yet, so their hours aren't counted above: ${data.unmatchedStaffNames.join(', ')}.</div>`;
+    html += `<div class="warn-card">These rostered FOH staff don't have a pay profile set up in the Dashboard's Settings yet, so their hours aren't counted above: ${data.unmatchedStaffNames.map(esc).join(', ')}.</div>`;
+  }
+  const ex = data.excluded || {};
+  if (ex.unmappedCategories && ex.unmappedCategories.length) {
+    const top = ex.unmappedCategories.slice(0, 5).map((c) => `${esc(c.name)} (${money(c.netSalesExGst)})`).join(', ');
+    html += `<div class="warn-card">Left out of FOH sales because they aren't marked Front of house, Back of house or Neither yet: ${top}. Mark them in the main Dashboard's Settings so they're counted properly.</div>`;
+  }
+  if (ex.unmappedLocations && ex.unmappedLocations.length) {
+    html += `<div class="warn-card">Rostered at locations not marked Front of house, Back of house or Neither yet, so left out of FOH wages: ${ex.unmappedLocations.map(esc).join(', ')}.</div>`;
+  }
+  if (ex.shiftsWithoutLocation) {
+    html += `<div class="warn-card">${ex.shiftsWithoutLocation} rostered shift(s) today have no location in Employment Hero, so they can't be counted as FOH.</div>`;
+  }
+  const chk = data.salesChecks;
+  if (chk && (chk.ordersWithRefundsNotDeducted > 0 || chk.lineItemsTaxUnknown > 0)) {
+    const bits = [];
+    if (chk.ordersWithRefundsNotDeducted > 0) bits.push(`${chk.ordersWithRefundsNotDeducted} refund(s) today aren't deducted from sales`);
+    if (chk.lineItemsTaxUnknown > 0) bits.push(`${chk.lineItemsTaxUnknown} item(s) had tax that couldn't be classified, so sales may be slightly high`);
+    html += `<div class="warn-card">${bits.join('; ')}.</div>`;
   }
   if (data.errors.square) {
-    html += `<div class="warn-card">Square error: ${data.errors.square}</div>`;
+    html += `<div class="warn-card">Square error: ${esc(data.errors.square)}</div>`;
   }
   if (data.errors.employmentHero) {
-    html += `<div class="warn-card">Employment Hero error: ${data.errors.employmentHero}</div>`;
+    html += `<div class="warn-card">Employment Hero error: ${esc(data.errors.employmentHero)}</div>`;
   }
 
   content.innerHTML = html;
