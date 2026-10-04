@@ -31,10 +31,17 @@
 // Xero, because POS totals include GST and aren't accounting truth. But
 // Xero's P&L isn't live — it lags, sometimes by days — so it has nothing to
 // say about "sales so far today". This app uses Square's live order data
-// instead, the same tradeoff the Dashboard's own FOH/BOH panel already
-// makes, and is equally careful to label it "Square sales" (GST-inclusive),
-// never "Revenue" — a different, faster, less precise number by design,
-// used for an in-the-moment floor decision, never for the books.
+// instead, and is equally careful to label it "FOH net sales (ex-GST, from
+// Square)", never "Revenue" — a different, faster, less precise number by
+// design, used for an in-the-moment floor decision, never for the books.
+//
+// FOH ONLY (owner's call, 4 Oct 2026): both sides of the wage % are
+// restricted to front of house, using the owner's own mapping in the main
+// Dashboard's Settings (settings.departmentMapping, read-only here):
+//   - SALES  = Square line items in categories mapped to "foh", net of
+//              discounts, with the GST taken back out.
+//   - WAGES  = rostered shifts at Employment Hero locations mapped to "foh".
+// Anything unmapped is left out AND reported, never silently counted.
 //
 // Hours-worked caveat, told to the owner before this was built and worth
 // repeating here: Employment Hero only gives this app the ROSTERED
@@ -48,6 +55,7 @@ import { resolvePeriod, toDateInputValue, employmentHeroShiftTimeToUtcMs, localD
 import * as squareAdapter from "./lib/square.js";
 import * as ehAdapter from "./lib/employmenthero.js";
 import { classifyDayType, hourlyRateFor } from "./lib/awardRates.js";
+import { fohSalesFromCategories, filterFohShifts } from "./lib/foh.js";
 
 const DEFAULT_SETTINGS = {
   timezone: "Australia/Sydney",
@@ -55,6 +63,7 @@ const DEFAULT_SETTINGS = {
   tradingDayRolloverHour: 4,
   staffPay: [],
   publicHolidays: [],
+  departmentMapping: { squareCategories: {}, rosterLocations: {} },
 };
 
 // Fixed traffic-light bands, points above the owner's own spec (3 Oct
@@ -242,26 +251,37 @@ async function handleApi(request, env, ctx, url) {
     // start=end=today, rather than re-deriving day boundaries a second way.
     const today = resolvePeriod("custom", settings, nowMs, { start: todayStr, end: todayStr });
 
+    const mapping = settings.departmentMapping || { squareCategories: {}, rosterLocations: {} };
+
     const locationIds = await resolveSquareLocationIds(env);
     const squareConnected = !!env.SQUARE_ACCESS_TOKEN && !!locationIds;
-    let salesSoFarCents = null, squareError = null;
+    let fohSales = null, squareError = null;
+    let salesDetail = null;
     if (squareConnected) {
       try {
         const salesEndISO = new Date(Math.min(nowMs, today.endUTC)).toISOString();
-        salesSoFarCents = await squareAdapter.fetchTotalGrossSalesCents(
+        const catalog = await squareAdapter.fetchCatalogCategoryMap(env.SQUARE_ACCESS_TOKEN);
+        const raw = await squareAdapter.fetchNetSalesExGstByCategory(
           env.SQUARE_ACCESS_TOKEN,
           locationIds,
           new Date(today.startUTC).toISOString(),
-          salesEndISO
+          salesEndISO,
+          catalog.categoryNameByVariationId
         );
+        fohSales = fohSalesFromCategories(raw.centsByCategory, mapping.squareCategories);
+        salesDetail = raw;
       } catch (e) {
         squareError = String((e && e.message) || e);
       }
     }
-    const salesSoFar = salesSoFarCents === null ? null : round2(salesSoFarCents / 100);
+    // Only a real number when at least one Square category is mapped to FOH;
+    // otherwise "not set up" (never a misleading $0 FOH sales).
+    const fohSalesSetUp = !!(fohSales && fohSales.hasFohCategory);
+    const salesSoFar = fohSalesSetUp ? round2(fohSales.fohCents / 100) : null;
 
     const ehAuth = await getValidEmploymentHeroAccessToken(env, kv);
     let shiftsResult = null, ehError = null;
+    let fohRoster = null;
     if (ehAuth) {
       try {
         const shifts = await ehAdapter.fetchRosteredShifts(
@@ -270,7 +290,11 @@ async function handleApi(request, env, ctx, url) {
           new Date(today.startUTC).toISOString(),
           new Date(today.endUTC).toISOString()
         );
-        shiftsResult = splitShiftsNowCost(shifts, settings.staffPay, settings.publicHolidays, settings.timezone, nowMs);
+        // FOH roster only: shifts at locations the owner mapped to FOH.
+        fohRoster = filterFohShifts(shifts, mapping.rosterLocations);
+        if (fohRoster.hasFohLocation) {
+          shiftsResult = splitShiftsNowCost(fohRoster.shifts, settings.staffPay, settings.publicHolidays, settings.timezone, nowMs);
+        }
       } catch (e) {
         ehError = String((e && e.message) || e);
       }
@@ -320,6 +344,29 @@ async function handleApi(request, env, ctx, url) {
         staffPay: staffPayConfigured,
       },
       errors: { square: squareError, employmentHero: ehError },
+      // "Is the FOH split set up?" — drives the plain-language setup message
+      // on the phone instead of showing $0 or a made-up wage %.
+      fohSetup: {
+        salesCategories: fohSales ? fohSales.hasFohCategory : null,
+        rosterLocations: fohRoster ? fohRoster.hasFohLocation : null,
+      },
+      // What was left OUT of the FOH figures because it isn't mapped yet.
+      excluded: {
+        unmappedCategories: fohSales
+          ? fohSales.unmappedCategories.map((c) => ({ name: c.name, netSalesExGst: round2(c.cents / 100) }))
+          : [],
+        unmappedLocations: fohRoster ? fohRoster.unmappedLocations : [],
+        shiftsWithoutLocation: fohRoster ? fohRoster.shiftsWithoutLocation : 0,
+      },
+      // Numbers for the owner to sanity-check against Square's own reports.
+      salesChecks: salesDetail
+        ? {
+            gstRemoved: round2(salesDetail.gstRemovedCents / 100),
+            grossIncGstAllCategories: round2(salesDetail.grossCents / 100),
+            ordersWithRefundsNotDeducted: salesDetail.ordersWithReturns,
+            lineItemsTaxUnknown: salesDetail.taxUnknownLineItems,
+          }
+        : null,
       noOneRosteredToday: shiftsResult ? shiftsResult.windowStart === null : null,
       salesSoFar,
       hoursWorkedSoFar,

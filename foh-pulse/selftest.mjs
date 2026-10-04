@@ -38,7 +38,7 @@ function checkJsSyntax(relPath) {
 }
 
 // JS files
-["worker.js", "lib/periods.js", "lib/square.js", "lib/auth.js", "lib/employmenthero.js", "lib/awardRates.js"].forEach(checkJsSyntax);
+["worker.js", "lib/periods.js", "lib/square.js", "lib/auth.js", "lib/employmenthero.js", "lib/awardRates.js", "lib/foh.js"].forEach(checkJsSyntax);
 
 // public/index.html — must be named exactly this or the static-assets host
 // won't serve it for "/". Self-tested for truncation too.
