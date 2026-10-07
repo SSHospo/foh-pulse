@@ -253,9 +253,17 @@ async function handleApi(request, env, ctx, url) {
 
     const mapping = settings.departmentMapping || { squareCategories: {}, rosterLocations: {} };
 
-    const locationIds = await resolveSquareLocationIds(env);
+    // Each outside-world call below is caught on its own, so ONE bad
+    // connection (e.g. a wrong or expired key) shows up as a plain-language
+    // error on the phone instead of taking down the whole page.
+    let locationIds = null, squareError = null;
+    try {
+      locationIds = await resolveSquareLocationIds(env);
+    } catch (e) {
+      squareError = String((e && e.message) || e);
+    }
     const squareConnected = !!env.SQUARE_ACCESS_TOKEN && !!locationIds;
-    let fohSales = null, squareError = null;
+    let fohSales = null;
     let salesDetail = null;
     if (squareConnected) {
       try {
@@ -279,8 +287,16 @@ async function handleApi(request, env, ctx, url) {
     const fohSalesSetUp = !!(fohSales && fohSales.hasFohCategory);
     const salesSoFar = fohSalesSetUp ? round2(fohSales.fohCents / 100) : null;
 
-    const ehAuth = await getValidEmploymentHeroAccessToken(env, kv);
-    let shiftsResult = null, ehError = null;
+    let ehAuth = null, ehError = null;
+    try {
+      ehAuth = await getValidEmploymentHeroAccessToken(env, kv);
+    } catch (e) {
+      // Most likely cause: this Worker's own copy of the Employment Hero
+      // client id/secret doesn't match the real app, so the token refresh
+      // is refused.
+      ehError = String((e && e.message) || e);
+    }
+    let shiftsResult = null;
     let fohRoster = null;
     if (ehAuth) {
       try {
