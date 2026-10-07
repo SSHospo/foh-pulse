@@ -315,6 +315,14 @@ function renderNotConfigured(missingBits) {
 }
 
 async function loadToday() {
+  try {
+    await loadTodayInner();
+  } catch (err) {
+    content.innerHTML = `<div class="warn-card">Something went wrong showing today's numbers: ${esc((err && err.message) || err)}. Tap Refresh now to try again. If it keeps happening, tell Claude this message.</div>`;
+  }
+}
+
+async function loadTodayInner() {
   let data;
   try {
     const res = await fetch('/api/today');
@@ -325,11 +333,25 @@ async function loadToday() {
     return;
   }
 
+  if (!data.configured) {
+    const why = data.detail || data.error || 'unknown problem';
+    content.innerHTML = `<div class="warn-card">The server hit a problem and couldn't build today's numbers: ${esc(why)}</div>`;
+    return;
+  }
+
   const missing = [];
   if (!data.configured.square) missing.push('Square connected');
   if (!data.configured.employmentHero) missing.push('Employment Hero connected');
   if (!data.configured.staffPay) missing.push('Staff pay setup (in the Dashboard\'s Settings)');
-  if (missing.length) { renderNotConfigured(missing); updateAsOf(data.asOf); return; }
+  if (missing.length) {
+    renderNotConfigured(missing);
+    const errs = [];
+    if (data.errors && data.errors.square) errs.push('Square: ' + data.errors.square);
+    if (data.errors && data.errors.employmentHero) errs.push('Employment Hero: ' + data.errors.employmentHero);
+    if (errs.length) content.innerHTML += errs.map((e) => `<div class="warn-card">${esc(e)}</div>`).join('');
+    updateAsOf(data.asOf);
+    return;
+  }
 
   // FOH split not set up in the main Dashboard yet: say so plainly rather
   // than showing $0 sales or a made-up wage %.
